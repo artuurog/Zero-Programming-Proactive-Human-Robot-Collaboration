@@ -10,9 +10,9 @@ operator's reach — before they are asked for.
 The reference task is a **5-step carburetor assembly**. A new task can be taught from
 a single demonstration (no manual annotation) via the learning phase.
 
-> Master's thesis codebase. The two documents in [`docs/`](docs/) are the authoritative
+> The two documents in [`docs/`](docs/) are the authoritative
 > design reference: [`METHODOLOGY_REFERENCE.md`](docs/METHODOLOGY_REFERENCE.md) maps every
-> subsystem to exact code, and [`THESIS_EXPERIMENTS_CONTEXT.md`](docs/THESIS_EXPERIMENTS_CONTEXT.md)
+> subsystem to exact code, and [`EXPERIMENTS_CONTEXT.md`](docs/EXPERIMENTS_CONTEXT.md)
 > documents the experimental design and metrics.
 
 ---
