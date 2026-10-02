@@ -7,11 +7,6 @@ current action, predicts the next assembly step with a local/cloud **LLM** or a
 **VLM**, and pre-stages the required parts from the robot's storage zone into the
 operator's reach — before they are asked for.
 
-> The two documents in [`docs/`](docs/) are the authoritative
-> design reference: [`METHODOLOGY_REFERENCE.md`](docs/METHODOLOGY_REFERENCE.md) maps every
-> subsystem to exact code, and [`EXPERIMENTS_CONTEXT.md`](docs/EXPERIMENTS_CONTEXT.md)
-> documents the experimental design and metrics.
-
 ---
 
 ## How it works
