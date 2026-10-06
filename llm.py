@@ -1,7 +1,7 @@
 import cv2
 import os
 from transformers import AutoTokenizer
-from optimum import OVModelForCausalLM
+from optimum.intel import OVModelForCausalLM
 import json
 import time
 import re
