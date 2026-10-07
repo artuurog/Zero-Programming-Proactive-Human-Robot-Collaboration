@@ -53,6 +53,9 @@ Dual Intel RealSense cameras + LLM (Qwen/Llama) + VLM (Gemini) + ABB GoFa robot.
   python main.py --with-context --participant-id P003 --trial-number 2
   python main.py --local-model --with-context
   python main.py --disassembly --silent-setup
+
+
+  changes to file
 """
 
 import cv2
