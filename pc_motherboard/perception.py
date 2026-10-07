@@ -10,7 +10,7 @@ import threading
 from collections import deque, Counter, defaultdict
 
 class PerceptionModule:
-    def __init__(self, hand_model_path="hand_landmarker.task", object_model_path="best_3.pt"):
+    def __init__(self, hand_model_path="hand_landmarker.task", object_model_path="yolo_motherboard.pt"):
         self.hand_model_path = hand_model_path
         self.object_model_path = object_model_path
 
