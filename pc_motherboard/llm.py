@@ -14,7 +14,11 @@ class LLM_planner:
     def __init__(self, model_name="qwen3_4B_INT8", assembly_file='learned_memory.json',
                  load_local_model=True):
         # Always load assembly memory (needed by both local and API backends)
-        with open(assembly_file, 'r', encoding='utf-8') as f:
+        if not os.path.exists(assembly_file):
+            with open(assembly_file, 'w', encoding='utf-8') as f:
+                json.dump([], f)
+            print(f"LLM_planner: '{assembly_file}' not found, created empty file.")
+        with open(assembly_file, 'r', encoding='utf-8-sig') as f:
             self.memory = json.load(f)
         self.assembly_str = json.dumps(self.memory, indent=2)
 

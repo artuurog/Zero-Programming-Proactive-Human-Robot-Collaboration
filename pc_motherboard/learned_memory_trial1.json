@@ -1,0 +1,41 @@
+[
+    {
+        "step number": 1,
+        "step description": "Place the motherboard on the workspace as the main base component.",
+        "objects_required": [
+            "motherboard"
+        ]
+    },
+    {
+        "step number": 2,
+        "step description": "Insert the RAM sticks into the memory slots on the motherboard.",
+        "objects_required": [
+            "motherboard",
+            "ram"
+        ]
+    },
+    {
+        "step number": 3,
+        "step description": "Mount the CPU fan onto the motherboard.",
+        "objects_required": [
+            "motherboard",
+            "fan"
+        ]
+    },
+    {
+        "step number": 4,
+        "step description": "Connect Cables A to the motherboard.",
+        "objects_required": [
+            "motherboard",
+            "cables_a"
+        ]
+    },
+    {
+        "step number": 5,
+        "step description": "Attach the SATA connector to the motherboard.",
+        "objects_required": [
+            "motherboard",
+            "sata_connector"
+        ]
+    }
+]
