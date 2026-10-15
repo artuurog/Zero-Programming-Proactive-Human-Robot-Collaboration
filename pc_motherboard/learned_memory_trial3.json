@@ -1,0 +1,34 @@
+[
+    {
+        "step number": 1,
+        "step description": "Install the cooling fan onto the motherboard assembly.",
+        "objects_required": [
+            "cooling_fan",
+            "motherboard"
+        ]
+    },
+    {
+        "step number": 2,
+        "step description": "Install the RAM modules into the DIMM slots on the motherboard.",
+        "objects_required": [
+            "ram",
+            "motherboard"
+        ]
+    },
+    {
+        "step number": 3,
+        "step description": "Connect the SATA connector to the motherboard.",
+        "objects_required": [
+            "sata_connector",
+            "motherboard"
+        ]
+    },
+    {
+        "step number": 4,
+        "step description": "Connect Cables A to the corresponding connector ports on the motherboard.",
+        "objects_required": [
+            "cables_a",
+            "motherboard"
+        ]
+    }
+]
