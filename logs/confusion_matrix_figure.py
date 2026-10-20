@@ -26,7 +26,10 @@ Input (same layout trial_logger.py writes, one pair per trial)
 
     <memory>.json            list of {"step number": int, "step description": str}.
                              Used to map stage_of_assembly text -> step number
-                             by word overlap (same rule as analyze_results.py).
+                             by word overlap (as in analyze_results.py, but
+                             punctuation is ignored and ties are dropped, see
+                             --tie-break). The matrix is NxN, N = highest step
+                             number in this file.
                              Default lookup: --memory, then learned_memory.json /
                              memory.json in --log-dir and its parent.
 
@@ -37,6 +40,7 @@ exactly as in the original figure.
 
 import argparse
 import json
+import re
 import warnings
 from pathlib import Path
 
@@ -48,6 +52,7 @@ import numpy as np
 warnings.filterwarnings("ignore", category=UserWarning)
 
 DPI = 300
+AMBIGUOUS = -1          # resolve_step() result when several steps tie
 
 DEFAULT_LABELS = {"hf_api": "Llama 4 Scout", "local": "Qwen3 4B INT8"}
 
@@ -72,19 +77,35 @@ def load_memory(explicit: str | None, log_dir: Path) -> list[dict]:
     raise FileNotFoundError("No memory file found; pass --memory <steps.json>")
 
 
-def resolve_step(text: str, memory: list[dict]):
-    """Match stage_of_assembly text to a step number via word overlap."""
+def _tokens(text: str) -> set[str]:
+    """Lower-cased words without punctuation ('motherboard.' == 'motherboard');
+    underscores are kept so 'carburetor_body' stays one word."""
+    return {w for w in re.findall(r"[a-z0-9_]+", text.lower())
+            if w not in _STOPWORDS}
+
+
+def resolve_step(text: str, memory: list[dict], tie_break: str = "drop"):
+    """Match stage_of_assembly text to a step number via word overlap.
+
+    Returns None when nothing overlaps, or on a tie between steps when
+    tie_break == "drop" (with "first" the lowest step number wins, which is
+    what analyze_results.py does).
+    """
     if not text:
         return None
-    words = {w for w in text.lower().split() if w not in _STOPWORDS}
-    best_step, best_score = None, 0
+    words = _tokens(text)
+    best_steps, best_score = [], 0
     for step in memory:
-        step_words = {w for w in step["step description"].lower().split()
-                      if w not in _STOPWORDS}
-        score = len(words & step_words)
+        score = len(words & _tokens(step["step description"]))
         if score > best_score:
-            best_score, best_step = score, step["step number"]
-    return best_step
+            best_score, best_steps = score, [step["step number"]]
+        elif score == best_score and score > 0:
+            best_steps.append(step["step number"])
+    if not best_steps:
+        return None
+    if len(best_steps) > 1 and tie_break == "drop":
+        return AMBIGUOUS
+    return best_steps[0]
 
 
 def to_step_int(v):
@@ -104,10 +125,11 @@ def to_bool(v):
     return None            # null / "unclear"
 
 
-def load_predictions(log_dir: Path, memory: list[dict]) -> list[dict]:
+def load_predictions(log_dir: Path, memory: list[dict],
+                     tie_break: str = "drop") -> list[dict]:
     """One dict per usable call: model key, gt step, predicted step."""
     rows = []
-    n_total = n_unresolved = n_unannotated = 0
+    n_total = n_unresolved = n_unannotated = n_ambiguous = 0
     jsonl_files = sorted(log_dir.glob("*_predictions.jsonl"))
     if not jsonl_files:
         raise FileNotFoundError(f"No *_predictions.jsonl files in {log_dir}")
@@ -139,7 +161,10 @@ def load_predictions(log_dir: Path, memory: list[dict]) -> list[dict]:
                     n_unannotated += 1
                     continue
                 pred = resolve_step(r.get("output", {}).get("stage_of_assembly", ""),
-                                    memory)
+                                    memory, tie_break)
+                if pred == AMBIGUOUS:
+                    n_ambiguous += 1
+                    continue
                 if pred is None:
                     n_unresolved += 1
                     continue
@@ -148,7 +173,8 @@ def load_predictions(log_dir: Path, memory: list[dict]) -> list[dict]:
 
     print(f"  calls: {n_total} total, {len(rows)} used, "
           f"{n_unannotated} not annotated / none / unclear, "
-          f"{n_unresolved} text not mapped to a step")
+          f"{n_unresolved} text not mapped to a step, "
+          f"{n_ambiguous} text tied between steps")
     return rows
 
 
@@ -240,6 +266,9 @@ def main():
     ap.add_argument("--labels", default=None,
                     help='backend=name pairs, e.g. "hf_api=Llama 4 Scout,local=Qwen3"')
     ap.add_argument("--vlm-label", default="Gemini")
+    ap.add_argument("--tie-break", choices=("drop", "first"), default="drop",
+                    help="stage text matching several steps equally: drop the call "
+                         "(default) or take the lowest step like analyze_results.py")
     ap.add_argument("--note", default="", help="small grey footnote under panel 1")
     args = ap.parse_args()
 
@@ -247,7 +276,7 @@ def main():
     memory = load_memory(args.memory, log_dir)
     n_steps = max(s["step number"] for s in memory)
 
-    rows = load_predictions(log_dir, memory)
+    rows = load_predictions(log_dir, memory, args.tie_break)
     panels = build_panels(rows, parse_labels(args.labels), args.vlm_label)
     if not panels:
         print("  [skip] no annotated predictions")
