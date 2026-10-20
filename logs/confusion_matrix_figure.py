@@ -13,7 +13,19 @@ Usage
         --labels "hf_api=Llama 4 Scout,local=Qwen3 4B INT8" --vlm-label "Gemini" \
         --output my_figs/cm.pdf
 
-Input (same layout trial_logger.py writes, one pair per trial)
+Two input modes
+---------------
+  --log-dir D        raw per-trial logs (below); counts are computed here.
+  --counts-json F    ONE json file with already-aggregated counts, no logs and
+                     no memory file needed. A list with one entry per panel;
+                     "matrix"[i][j] = calls with ground-truth step i+1 predicted
+                     as step j+1 (rows = ground truth). "type" is "llm" (blue)
+                     or "vlm" (purple) and only picks the colour map:
+                       [{"title": "LLM — Llama 4 Scout", "type": "llm",
+                         "matrix": [[5,2,0,0],[1,4,2,1],[0,0,7,0],[0,2,1,5]]},
+                        {"title": "VLM — Gemini", "type": "vlm", "matrix": [...]}]
+
+Input for --log-dir (same layout trial_logger.py writes, one pair per trial)
 -----
     <tag>_summary.json       needs only "llm_backend" (the model that served
                              the LLM calls of that trial)
@@ -180,19 +192,46 @@ def load_predictions(log_dir: Path, memory: list[dict],
 
 # ── figure ───────────────────────────────────────────────────────────────────
 
-def build_panels(rows, labels, vlm_label):
+def rows_to_matrix(rows, n_steps) -> np.ndarray:
+    mat = np.zeros((n_steps, n_steps), dtype=int)
+    for r in rows:
+        gi, pi = r["gt"] - 1, r["pred"] - 1
+        if 0 <= gi < n_steps and 0 <= pi < n_steps:
+            mat[gi, pi] += 1
+    return mat
+
+
+def load_counts(path: Path) -> list[tuple]:
+    """Panels from one aggregated JSON file (see module docstring)."""
+    with open(path, encoding="utf-8") as f:
+        entries = json.load(f)
+    panels = []
+    for e in entries:
+        mat = np.array(e["matrix"], dtype=int)
+        if mat.ndim != 2 or mat.shape[0] != mat.shape[1]:
+            raise ValueError(f"'{e.get('title')}': matrix must be square, got {mat.shape}")
+        cmap = "Purples" if e.get("type", "llm") == "vlm" else "Blues"
+        panels.append((mat, cmap, e["title"]))
+    sizes = {m.shape[0] for m, _, _ in panels}
+    if len(sizes) > 1:
+        raise ValueError(f"all matrices must have the same size, got {sorted(sizes)}")
+    return panels
+
+
+def build_panels(rows, labels, vlm_label, n_steps):
     panels = []
     llm = [r for r in rows if r["type"] == "llm"]
     for backend in sorted({r["backend"] for r in llm}):
         sub = [r for r in llm if r["backend"] == backend]
-        panels.append((sub, "Blues", f"LLM — {labels.get(backend, backend)}"))
+        panels.append((rows_to_matrix(sub, n_steps), "Blues",
+                       f"LLM — {labels.get(backend, backend)}"))
     vlm = [r for r in rows if r["type"] == "vlm"]
     if vlm:
-        panels.append((vlm, "Purples", f"VLM — {vlm_label}"))
+        panels.append((rows_to_matrix(vlm, n_steps), "Purples", f"VLM — {vlm_label}"))
     return panels
 
 
-def plot_confusion(panels, n_steps, note, out_path: Path):
+def plot_confusion(panels, note, out_path: Path):
     plt.rcParams.update({
         "font.family": "serif", "font.size": 9, "axes.titlesize": 10,
         "axes.labelsize": 9, "xtick.labelsize": 8, "ytick.labelsize": 8,
@@ -206,13 +245,8 @@ def plot_confusion(panels, n_steps, note, out_path: Path):
                              squeeze=False)
     axes = axes[0]
 
-    for ax, (sub, cmap_name, title) in zip(axes, panels):
-        mat = np.zeros((n_steps, n_steps), dtype=int)
-        for r in sub:
-            gi, pi = r["gt"] - 1, r["pred"] - 1
-            if 0 <= gi < n_steps and 0 <= pi < n_steps:
-                mat[gi, pi] += 1
-
+    for ax, (mat, cmap_name, title) in zip(axes, panels):
+        n_steps = mat.shape[0]
         row_sums = mat.sum(axis=1, keepdims=True)
         with np.errstate(divide="ignore", invalid="ignore"):
             norm = np.where(row_sums > 0, mat / row_sums, 0.0)
@@ -231,7 +265,7 @@ def plot_confusion(panels, n_steps, note, out_path: Path):
         ax.set_yticks(range(n_steps)); ax.set_yticklabels(lbls)
         ax.set_xlabel("Predicted Step", fontsize=8)
         ax.set_ylabel("Ground Truth Step", fontsize=8)
-        ax.set_title(f"{title}  (n={len(sub)})")
+        ax.set_title(f"{title}  (n={int(mat.sum())})")
         cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
         cb.set_label("Row-normalised", fontsize=5.5)
         cb.ax.tick_params(labelsize=5.5)
@@ -258,10 +292,13 @@ def parse_labels(spec: str | None) -> dict:
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--log-dir", required=True,
-                    help="folder with *_summary.json / *_predictions.jsonl")
+    src = ap.add_mutually_exclusive_group(required=True)
+    src.add_argument("--log-dir",
+                     help="folder with *_summary.json / *_predictions.jsonl")
+    src.add_argument("--counts-json",
+                     help="one JSON file with aggregated confusion-matrix counts")
     ap.add_argument("--memory", default=None, help="step list JSON")
-    ap.add_argument("--output", default="fig05_confusion_matrix.pdf",
+    ap.add_argument("--output", default="pc_motherboard_llm_confusion_matrix.pdf",
                     help="output file; extension picks the format (pdf/png/svg)")
     ap.add_argument("--labels", default=None,
                     help='backend=name pairs, e.g. "hf_api=Llama 4 Scout,local=Qwen3"')
@@ -272,16 +309,18 @@ def main():
     ap.add_argument("--note", default="", help="small grey footnote under panel 1")
     args = ap.parse_args()
 
-    log_dir = Path(args.log_dir)
-    memory = load_memory(args.memory, log_dir)
-    n_steps = max(s["step number"] for s in memory)
-
-    rows = load_predictions(log_dir, memory, args.tie_break)
-    panels = build_panels(rows, parse_labels(args.labels), args.vlm_label)
+    if args.counts_json:
+        panels = load_counts(Path(args.counts_json))
+    else:
+        log_dir = Path(args.log_dir)
+        memory = load_memory(args.memory, log_dir)
+        n_steps = max(s["step number"] for s in memory)
+        rows = load_predictions(log_dir, memory, args.tie_break)
+        panels = build_panels(rows, parse_labels(args.labels), args.vlm_label, n_steps)
     if not panels:
         print("  [skip] no annotated predictions")
         return
-    plot_confusion(panels, n_steps, args.note, Path(args.output))
+    plot_confusion(panels, args.note, Path(args.output))
 
 
 if __name__ == "__main__":
