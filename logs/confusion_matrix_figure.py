@@ -231,7 +231,63 @@ def build_panels(rows, labels, vlm_label, n_steps):
     return panels
 
 
+def draw_panel(fig, ax, mat, cmap_name, title):
+    n_steps = mat.shape[0]
+    row_sums = mat.sum(axis=1, keepdims=True)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        norm = np.where(row_sums > 0, mat / row_sums, 0.0)
+
+    im = ax.imshow(norm, cmap=cmap_name, vmin=0, vmax=1, aspect="equal")
+    for i in range(n_steps):
+        for j in range(n_steps):
+            cnt, total = mat[i, j], int(row_sums[i, 0])
+            pct = f"\n({cnt / total:.0%})" if total > 0 and cnt > 0 else ""
+            ax.text(j, i, f"{cnt}{pct}", ha="center", va="center",
+                    fontsize=6.5,
+                    color="white" if norm[i, j] > 0.55 else "black")
+
+    lbls = [f"S{i + 1}" for i in range(n_steps)]
+    ax.set_xticks(range(n_steps)); ax.set_xticklabels(lbls)
+    ax.set_yticks(range(n_steps)); ax.set_yticklabels(lbls)
+    ax.set_xlabel("Predicted Step", fontsize=8)
+    ax.set_ylabel("Ground Truth Step", fontsize=8)
+    ax.set_title(f"{title}  (n={int(mat.sum())})")
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cb.set_label("Row-normalised", fontsize=5.5)
+    cb.ax.tick_params(labelsize=5.5)
+
+
+def _figure(panels, note):
+    """One figure holding all given panels side by side."""
+    panel_w = 3.8
+    fig_w = panel_w * len(panels) + 0.6 * len(panels)       # + colorbar space
+    fig, axes = plt.subplots(1, len(panels), figsize=(fig_w, panel_w + 0.6),
+                             squeeze=False)
+    axes = axes[0]
+    for ax, (mat, cmap_name, title) in zip(axes, panels):
+        draw_panel(fig, ax, mat, cmap_name, title)
+    # fig.suptitle("Confusion Matrix: Predicted vs Ground Truth Step", fontsize=10)
+    if note:
+        axes[0].annotate(note, xy=(0.0, -0.20), xycoords="axes fraction",
+                         fontsize=5.5, color="#888888", ha="left")
+    fig.tight_layout()
+    return fig
+
+
+def _save(fig, out_path: Path):
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=DPI, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  -> {out_path}")
+
+
+def _slug(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+
+
 def plot_confusion(panels, note, out_path: Path):
+    """Save the combined figure to out_path and each panel on its own as
+    <out_path stem>_<panel title>.<ext> next to it."""
     plt.rcParams.update({
         "font.family": "serif", "font.size": 9, "axes.titlesize": 10,
         "axes.labelsize": 9, "xtick.labelsize": 8, "ytick.labelsize": 8,
@@ -239,46 +295,12 @@ def plot_confusion(panels, note, out_path: Path):
         "pdf.fonttype": 42,
     })
 
-    panel_w = 3.8
-    fig_w = panel_w * len(panels) + 0.6 * len(panels)       # + colorbar space
-    fig, axes = plt.subplots(1, len(panels), figsize=(fig_w, panel_w + 0.6),
-                             squeeze=False)
-    axes = axes[0]
+    _save(_figure(panels, note), out_path)
 
-    for ax, (mat, cmap_name, title) in zip(axes, panels):
-        n_steps = mat.shape[0]
-        row_sums = mat.sum(axis=1, keepdims=True)
-        with np.errstate(divide="ignore", invalid="ignore"):
-            norm = np.where(row_sums > 0, mat / row_sums, 0.0)
-
-        im = ax.imshow(norm, cmap=cmap_name, vmin=0, vmax=1, aspect="equal")
-        for i in range(n_steps):
-            for j in range(n_steps):
-                cnt, total = mat[i, j], int(row_sums[i, 0])
-                pct = f"\n({cnt / total:.0%})" if total > 0 and cnt > 0 else ""
-                ax.text(j, i, f"{cnt}{pct}", ha="center", va="center",
-                        fontsize=6.5,
-                        color="white" if norm[i, j] > 0.55 else "black")
-
-        lbls = [f"S{i + 1}" for i in range(n_steps)]
-        ax.set_xticks(range(n_steps)); ax.set_xticklabels(lbls)
-        ax.set_yticks(range(n_steps)); ax.set_yticklabels(lbls)
-        ax.set_xlabel("Predicted Step", fontsize=8)
-        ax.set_ylabel("Ground Truth Step", fontsize=8)
-        ax.set_title(f"{title}  (n={int(mat.sum())})")
-        cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-        cb.set_label("Row-normalised", fontsize=5.5)
-        cb.ax.tick_params(labelsize=5.5)
-
-    fig.suptitle("Confusion Matrix: Predicted vs Ground Truth Step", fontsize=10)
-    if note:
-        axes[0].annotate(note, xy=(0.0, -0.20), xycoords="axes fraction",
-                         fontsize=5.5, color="#888888", ha="left")
-    fig.tight_layout()
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=DPI, bbox_inches="tight")
-    plt.close(fig)
-    print(f"  -> {out_path}")
+    if len(panels) > 1:
+        for k, panel in enumerate(panels):
+            name = f"{out_path.stem}_{_slug(panel[2]) or k + 1}{out_path.suffix}"
+            _save(_figure([panel], note if k == 0 else ""), out_path.with_name(name))
 
 
 def parse_labels(spec: str | None) -> dict:
